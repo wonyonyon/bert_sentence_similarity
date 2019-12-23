@@ -9,86 +9,29 @@ import torch
 import os
 from torch.utils.data import DataLoader,RandomSampler,TensorDataset
 from transformers import BertConfig, BertModel,BertForSequenceClassification,BertTokenizer
-from transformers import glue_processors as processors
-from transformers.data.processors.utils import DataProcessor, InputExample
-from transformers import glue_convert_examples_to_features as convert_examples_to_features
 from tqdm import tqdm, trange
 from transformers import AdamW, get_linear_schedule_with_warmup
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from utils.data_helper import QuerySimilarityProcessor, load_data
 # import pandas as pd
 # pd.options.display.max_columns = None
 
-class BertSentenceSimilarity():
-    pass
-
-
-def load_data(data_dir, tokenizer, evaluate=False):
-    examples = processor.get_dev_examples(data_dir) if evaluate else processor.get_train_examples(data_dir)
-    features = convert_examples_to_features(examples, tokenizer, max_length=128,label_list=processor.get_labels(),output_mode='classification')
-    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-
-    all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
-
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
-    return dataset
-
-class QuerySimilarityProcessor(DataProcessor):
-
-    def get_example_from_tensor_dict(self, tensor_dict):
-        """See base class."""
-        return InputExample(tensor_dict['idx'].numpy(),
-                            tensor_dict['question1'].numpy().decode('utf-8'),
-                            tensor_dict['question2'].numpy().decode('utf-8'),
-                            str(tensor_dict['label'].numpy()))
-
-    def get_train_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "train.txt")), "train")
-
-    def get_dev_examples(self, data_dir):
-        """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev.txt")), "dev")
-
-    def get_labels(self):
-        """See base class."""
-        return ["0", "1"]
-
-    def _create_examples(self, lines, set_type):
-        """Creates examples for the training and dev sets."""
-        examples = []
-        for (i, line) in enumerate(lines):
-            if i == 0:
-                continue
-            guid = "%s-%s" % (set_type, line[0]+line[1])
-            try:
-                text_a = line[0]
-                text_b = line[1]
-                label = line[2]
-            except IndexError:
-                continue
-            examples.append(
-                InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
-        return examples
 
 processor = QuerySimilarityProcessor()
 label_list = processor.get_labels()
-print(label_list)
+
 num_labels = len(label_list)
 config = BertConfig.from_pretrained("../data/bert-base-chinese/config.json", num_labels=num_labels)
 model = BertForSequenceClassification.from_pretrained("../data/bert-base-chinese/")
 tokenizer = BertTokenizer.from_pretrained('../data/bert-base-chinese/vocab.txt')
 
-train_dataset = load_data("../data/ATEC/", tokenizer)
+train_dataset = load_data("../data/ATEC/", processor, tokenizer)
 train_sampler = RandomSampler(train_dataset)
 train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=32)
 
-valid_dataset = load_data("../data/ATEC/", tokenizer,evaluate=True)
+valid_dataset = load_data("../data/ATEC/", processor, tokenizer,evaluate=True)
 valid_sampler = RandomSampler(train_dataset)
 valid_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=32)
 
@@ -102,12 +45,10 @@ optimizer_grouped_parameters = [
 ]
 
 optimizer = AdamW(optimizer_grouped_parameters, lr=5e-5)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
-                                                       mode="max",
-                                                       factor=0.5,
-                                                       patience=0)
-def train():
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=0)
 
+
+def train():
     model.train()
     epoch_start = time.time()
     batch_time_avg = 0.0
@@ -145,6 +86,7 @@ def train():
 
     return epoch_time, epoch_loss, epoch_accuracy
 
+
 def validate():
     model.eval()
     epoch_start = time.time()
@@ -177,6 +119,7 @@ def validate():
 
     return epoch_time, epoch_loss, epoch_accuracy, np.vstack(result_preds)
 
+
 def correct_predictions(output_probabilities, targets):
     """
     Compute the number of predictions that match some target classes in the
@@ -191,7 +134,6 @@ def correct_predictions(output_probabilities, targets):
     _, out_classes = output_probabilities.max(dim=1)
     correct = (out_classes == targets).sum()
     return correct.item()
-
 
 
 epochs = 10
