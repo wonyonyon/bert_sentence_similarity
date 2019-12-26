@@ -1,8 +1,4 @@
 # -*- coding: utf-8 -*-
-# -------------------------------------
-# Description:
-# @Author: tiniwu (tiniwu@tencent.com)
-# CopyRight: Tencent Company
 
 import os
 import torch
